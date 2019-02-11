@@ -8,28 +8,58 @@
 
 import UIKit
 
-protocol KNSwitcherChangeValueDelegate {
-    func switcherDidChangeValue(switcher: KNSwitcher,value: Bool)
-}
 
-class KNSwitcher: UIView {
-
-    var button: UIButton!
+class KNSwitcher: UIControl {
+    
+    private var button: UIButton!
+    
     var buttonLeftConstraint: NSLayoutConstraint!
-    var delegate: KNSwitcherChangeValueDelegate?
     
-    @IBInspectable var on: Bool = false
-    @IBInspectable var originalImage:UIImage?
-    @IBInspectable var selectedImage:UIImage?
-    @IBInspectable var selectedColor:UIColor = UIColor(red: 126/255.0, green: 134/255.0, blue: 249/255.0, alpha: 1)
-    @IBInspectable var originalColor:UIColor = UIColor(red: 243/255.0, green: 229/255.0, blue: 211/255.0, alpha: 1)
+    @IBInspectable var toggleScale: CGFloat = 0.8
+    @IBInspectable var animDuration: Double = 0.35
+    @IBInspectable var showShadowWhenSelected: Bool = true
+    @IBInspectable var originalImage: UIImage? {
+        didSet {
+            guard button != nil else { return }
+            button.setImage(originalImage, for: .normal)
+        }
+    }
+    @IBInspectable var selectedImage: UIImage? {
+        didSet {
+            guard button != nil else { return }
+            button.setImage(selectedImage, for: .selected)
+        }
+    }
+    @IBInspectable var selectedColor: UIColor = UIColor(red: 126/255.0, green: 134/255.0, blue: 249/255.0, alpha: 1) {
+        didSet {
+            guard button != nil else { return }
+            if button.isSelected {
+                button.backgroundColor = selectedColor
+            }
+        }
+    }
+    @IBInspectable var originalColor: UIColor = UIColor(red: 243/255.0, green: 229/255.0, blue: 211/255.0, alpha: 1) {
+        didSet {
+            guard button != nil else { return }
+            if !button.isSelected {
+                button.backgroundColor = originalColor
+            }
+        }
+    }
     
-    private var offCenterPosition: CGFloat!
-    private var onCenterPosition: CGFloat!
+    override var isSelected: Bool {
+        didSet {            
+            sendActions(for: .valueChanged)
+        }
+    }
     
-     init(frame: CGRect, on: Bool) {
+    private var offCenterPosition: CGFloat = 0.0
+    private var onCenterPosition: CGFloat = 0.0
+    private var firstLayout: Bool = true
+    
+    init(frame: CGRect, on: Bool) {
         super.init(frame: frame)
-        self.on = on
+        self.isSelected = on
         commonInit()
     }
     
@@ -39,15 +69,18 @@ class KNSwitcher: UIView {
     
     private func commonInit() {
         button = UIButton(type: .custom)
+        button.isUserInteractionEnabled = false
         self.addSubview(button)
         button.translatesAutoresizingMaskIntoConstraints = false
-        button.addTarget(self, action: #selector(switcherButtonTouch(_:)), for: UIControlEvents.touchUpInside)
+        addTarget(self, action: #selector(switcherButtonTouch), for: .touchUpInside)
         button.setImage(originalImage, for: .normal)
         button.setImage(selectedImage, for: .selected)
-        offCenterPosition = self.bounds.height * 0.1
-        onCenterPosition = self.bounds.width - (self.bounds.height * 0.9)
         
-        if on == true {
+        let spacingRatio = ((1.0 - toggleScale) / 2)
+        offCenterPosition = self.bounds.height * spacingRatio
+        onCenterPosition = self.bounds.width - (self.bounds.height * (1.0 - spacingRatio))
+        
+        if isSelected {
             self.button.backgroundColor = selectedColor
         } else {
             self.button.backgroundColor = originalColor
@@ -62,56 +95,61 @@ class KNSwitcher: UIView {
     
     override func layoutSubviews() {
         super.layoutSubviews()
-        self.layer.cornerRadius = self.bounds.height / 2
-        self.clipsToBounds = true
+        self.layer.cornerRadius = self.bounds.height / 2        
         button.layer.cornerRadius = button.bounds.height / 2
+        firstLayout = false
     }
     
     private func initLayout() {
         button.centerYAnchor.constraint(equalTo: self.centerYAnchor).isActive = true
         buttonLeftConstraint = button.leftAnchor.constraint(equalTo: self.leftAnchor)
         buttonLeftConstraint.isActive = true
-        button.heightAnchor.constraint(equalTo: self.heightAnchor, multiplier: 0.8).isActive = true
+        button.heightAnchor.constraint(equalTo: self.heightAnchor, multiplier: toggleScale).isActive = true
         button.widthAnchor.constraint(equalTo: button.heightAnchor, multiplier: 1).isActive = true
     }
     
     func setImages(onImage:UIImage? , offImage :UIImage?) {
-            button.setImage(offImage, for: .normal)
-            button.setImage(onImage, for: .selected)
-        }   
+        button.setImage(offImage, for: .normal)
+        button.setImage(onImage, for: .selected)
+    }
     
     required init?(coder aDecoder: NSCoder) {
         super.init(coder: aDecoder)
     }
     
-    func switcherButtonTouch(_ sender: AnyObject) {
-        on = !on
+    @objc func switcherButtonTouch() {
+        isSelected = !isSelected
         animationSwitcherButton()
-        delegate?.switcherDidChangeValue(switcher: self, value: on)
     }
     
     func animationSwitcherButton() {
-        if on == true {
+        let duration = firstLayout ? 0.0 : animDuration
+        
+        if isSelected {
             // Rotate animation
-            let rotateAnimation = CABasicAnimation(keyPath: "transform.rotation")
-            rotateAnimation.fromValue = -CGFloat(Double.pi)
-            rotateAnimation.toValue = 0.0
-            rotateAnimation.duration = 0.45
-            rotateAnimation.isCumulative = false;
-            self.button.layer.add(rotateAnimation, forKey: "rotate")
+            if duration > 0 {
+                let rotateAnimation = CABasicAnimation(keyPath: "transform.rotation")
+                rotateAnimation.fromValue = -CGFloat(Double.pi)
+                rotateAnimation.toValue = 0.0
+                rotateAnimation.duration = max(0.0, duration - 0.05)
+                rotateAnimation.isCumulative = false;
+                self.button.layer.add(rotateAnimation, forKey: "rotate")
+            }
             
             // Translation animation
-            UIView.animate(withDuration: 0.5, delay: 0.0, options: UIViewAnimationOptions.curveEaseInOut, animations: { () -> Void in
+            UIView.animate(withDuration: duration, delay: 0.0, options: [.curveEaseInOut, .transitionCrossDissolve], animations: {
                 self.button.isSelected = true
                 self.buttonLeftConstraint.constant = self.onCenterPosition
-                self.layoutIfNeeded()
                 self.button.backgroundColor = self.selectedColor
-                }, completion: { (finish:Bool) -> Void in
+                self.layoutIfNeeded()
+            }, completion: { [weak self] finish in
+                guard let `self` = self else { return }
+                if self.showShadowWhenSelected {
                     self.button.layer.shadowOffset = CGSize(width: 0, height: 0.2)
                     self.button.layer.shadowOpacity = 0.3
-                    self.button.layer.shadowRadius = self.offCenterPosition
-                    self.button.layer.cornerRadius = self.button.frame.height / 2
+                    self.button.layer.shadowRadius = self.offCenterPosition < 0 ? self.button.bounds.height * 0.1 : self.offCenterPosition
                     self.button.layer.shadowPath = UIBezierPath(roundedRect: self.button.layer.bounds, cornerRadius: self.button.frame.height / 2).cgPath
+                }
             })
         } else {
             // Clear Shadow
@@ -121,21 +159,22 @@ class KNSwitcher: UIView {
             self.button.layer.cornerRadius = self.button.frame.height / 2
             self.button.layer.shadowPath = nil
             
-            // Rotate animation
-            let rotateAnimation = CABasicAnimation(keyPath: "transform.rotation")
-            rotateAnimation.fromValue = 0.0
-            rotateAnimation.toValue = -CGFloat(Double.pi)
-            rotateAnimation.duration = 0.45
-            rotateAnimation.isCumulative = false;
-            self.button.layer.add(rotateAnimation, forKey: "rotate")
+            if duration > 0 {
+                // Rotate animation
+                let rotateAnimation = CABasicAnimation(keyPath: "transform.rotation")
+                rotateAnimation.fromValue = 0.0
+                rotateAnimation.toValue = -CGFloat(Double.pi)
+                rotateAnimation.duration = max(0.0, duration - 0.05)
+                rotateAnimation.isCumulative = false;
+                self.button.layer.add(rotateAnimation, forKey: "rotate")
+            }
             
-            UIView.animate(withDuration: 0.5, delay: 0.0, options: UIViewAnimationOptions.curveEaseInOut, animations: { () -> Void in
+            UIView.animate(withDuration: duration, delay: 0.0, options: [.curveEaseInOut, .transitionCrossDissolve], animations: {
                 self.button.isSelected = false
                 self.buttonLeftConstraint.constant = self.offCenterPosition
-                self.layoutIfNeeded()
                 self.button.backgroundColor = self.originalColor
-                }, completion: { (finish:Bool) -> Void in
-            })
+                self.layoutIfNeeded()
+            }, completion: nil)
         }
     }
 }
